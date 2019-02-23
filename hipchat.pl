@@ -7,6 +7,7 @@ package HC::API;
 #use warnings;
 use LWP::UserAgent;
 use JSON;
+use FindBin;
 
 #Setting Global Package Variables
 my $ua   = LWP::UserAgent->new();
@@ -15,7 +16,7 @@ my $base = 'https://eig.hipchat.com/v2/';
 
 #Defining Methods
 
-#Constructor including Auth key. 
+#Constructor including Auth key.
 sub new {
    my $class = shift;
    my $self  = { 'auth' => shift };
@@ -34,19 +35,19 @@ sub send_room {
 
    my($self, $room, $msg) = @_;
    my $url  = $base . 'room/' . $room . '/message';
-   
+
    die "[!!] Usage: send_room( <room id>, <message>)\n"
       unless $msg and $room;
 
    my $payload = {
       'message' => $msg,
    };
-   my $json = encode_json($payload); 
+   my $json = encode_json($payload);
 
    my $res  = $ua->post( $url, 'content-type' => 'application/json', Content => $json);
    if ( !$res->is_success ) {
       print $res->status_line.$/;
-      print $res->content.$/;      
+      print $res->content.$/;
    }
 }
 
@@ -70,9 +71,10 @@ sub send_chat {
 
    my $res  = $ua->post( $url, 'content-type' => 'application/json', Content => $json);
 
-   die "$res->status_line.$/.$res->content.$/"
-      unless $res->is_success;
-
+   if ( !$res->is_success ) {
+      print $res->status_line.$/;
+      print $res->content.$/;
+   }
 }
 
 
@@ -84,7 +86,7 @@ sub send_notif {
 
    die "[!!] Usage: send_notif( <room id>, <message>, [color])\n"
       unless $msg and $room;
-   
+
    my $payload = {
       'message' => $msg,
       'color'   => $color ? $color : 'random',
@@ -103,14 +105,13 @@ sub send_notif {
 sub get_chat_hist {
    use Data::Dumper;
 
-   my($self, $user, $num, $watch) = @_; 
+   my($self, $user, $num) = @_;
 
-   my $flag = undef;
    my $userID = $user =~ /@.*\.com$/ ? $user : get_id($user);
    my $url  = $base . 'user/' . $userID . '/history/latest';
 
    my $maxres = '?max-results=';
-   $maxres   .= $num ? $num : '20' ; # $maxres = $maxres . $num ? $num : '20'
+   $maxres   .= $num ? $num : '20' ;
    $url .= $maxres;
 
    die "[!!] Usage: get_chat_hist(<user id>, [max results(1-1000)])\n"
@@ -161,7 +162,7 @@ sub get_room_hist {
 
    my $res  = $ua->get( $url );
 
-   die $res->status_line.$/.$res->content.$/ 
+   die $res->status_line.$/.$res->content.$/
       unless $res->is_success;
 
    my $cont = decode_json($res->content);
@@ -183,7 +184,7 @@ sub get_room_hist {
       if ( $type eq 'message' ) {
          printf "\n\e[36m \b%s - @%s - %s\n\e[33m \b%s \e[0m\n"
          , $name, $hndl, $time, $msg;
-      } 
+      }
    }
 }
 
@@ -192,14 +193,14 @@ sub store_id {
 
    my ($id, $name, $hndl)= @_;
 
-   my $file = '/home/amzw/learning/inc/userHC.yaml';
+   my $file = "$FindBin::Bin/../inc/userHC.yaml";
    my $yaml = LoadFile($file);
-   
+
    $name =~ s|^\s+||;
    $name =~ s|\s+$||;
    $name =~ s|(\w) (\w)|$1_$2|g;
    $name = lc $name;
-   
+
    $hndl =~ s|^\s+||;
    $hndl =~ s|\s+$||;
    $hndl = lc $hndl;
@@ -208,7 +209,7 @@ sub store_id {
       open my $fh, '>>', $file or warn "[!!] $!\n";
       print $fh "$name: $id\n";
       close $fh;
-   } 
+   }
    if ( !$yaml->{$hndl} ) {
       open my $fh, '>>', $file or warn "[!!] $!\n";
       print $fh "$hndl: $id\n";
@@ -224,17 +225,17 @@ sub get_id {
    $temp =~ s|\s+$||;
    $temp =~ s|(\w) (\w)|$1_$2|g;
    $temp = lc $temp;
-    
-   if ($temp =~ /^\d+$/) { 
+
+   if ($temp =~ /^\d+$/) {
       return;
    } else {
-      my $ufile = '/home/amzw/perlSTUFFS/inc/userHC.yaml';
+      my $ufile = "$FindBin::Bin/../inc/userHC.yaml";
       my $ulist = LoadFile($ufile);
 
       if ($ulist->{$temp}) {
          return $ulist->{$temp};
       } else {
-         die "[!!] Don't seem to have $entry in the database ¯\\_(ツ)_/¯.\n" 
+         die "[!!] Don't seem to have $entry in the database ¯\\_(ツ)_/¯.\n"
             ."Please use ID instead I should be able to grab it after you do that.\n";
       }
    }
@@ -247,11 +248,11 @@ use Getopt::Long qw|:config gnu_getopt|;
 use YAML qw|LoadFile|;
 
 my ($room_hist, $chat_hist, $send_chat, $send_room, $send_notif);
-my ($count, $user, $room, $msg, $color, $pipe, $code, $watch);
+my ($count, $user, $room, $msg, $color, $pipe, $help, $code);
 
 GetOptions (
-   'room-hist|rhist|j' => \$room_hist,
-   'chat-hist|chist|h' => \$chat_hist,
+   'room-history|rhist|j' => \$room_hist,
+   'chat-history|chist|h' => \$chat_hist,
    'chat-send|csend|s' => \$send_chat,
    'room-send|rsend|g' => \$send_room,
    'send-notif|nsend|n' => \$send_notif,
@@ -262,61 +263,56 @@ GetOptions (
    'message|msg|m=s' => \$msg,
    'pipe-message|stdin|f' => \$pipe,
    'code|z' => \$code,
-   'watch|w' => \$watch,
-   '' => sub {die"Plz, no bare hyphens (-). 10q\n";}
+   '' => sub {die"Plz, no\n";}
 ); #or usage() and die "\n";
 
-my $token = '/home/amzw/perlSTUFFS/inc/authHC.yaml';
-my $yaml  = LoadFile($token);
-my $hc    = HC::API->new($yaml->{auth});
+
+my $token = "$FindBin::Bin/../inc/authHC.yaml";
+my $auth  = LoadFile($token);
+my $hc    = HC::API->new($auth->{auth});
 
 die "[!!] Cannot specify both --message and --pipe-message within the same command.\n"
    if $msg and $pipe;
 
 die "[!!] When sending a message, please specify the user ( --user ) and the message ( --message | --pipe-message ).\n" # and usage()
-   if($send_chat and !($user and ($msg or $pipe))); 
+   if($send_chat and !($user and ($msg or $pipe)));
 
 die "[!!] When sending a message to a room, please specify the user ( --room ) and the message ( --message | --pipe-message ).\n" # and usage()
    if(($send_room or $send_notif) and !($room and ($msg or $pipe)));
 
 
-csend() if $send_chat;
-rsend() if $send_room;
-nsend() if $send_notif;
-chist() if $chat_hist;
-rhist() if $room_hist;
-
-
-sub csend {   
-   if ( $msg ) { 
+if ( $send_chat ) {
+   if ( $msg ) {
       $hc->send_chat( $user, $msg);
-   } 
+   }
    if ( $pipe ) {
       undef $pipe;
       while (<>) {
          $pipe .= $_;
       }
       $hc->send_chat( $user, $pipe, $code);
-   }   
+   }
+
 }
 
-sub chist { 
+if ( $chat_hist ) {
    die "[!!] When checking a chat's history, you must specify the user's name, ID, or email ( --user ).\n" # and usage()
       unless $user;
 
    warn "[**] No need to set the 'room' (--room) when making requests to a private chat.\n" if $room;
-   $hc->get_chat_hist($user, $count, $watch);
+   $hc->get_chat_hist($user, $count);
 }
 
-sub rhist { 
+if ( $room_hist ) {
    die "[!!] When checking a room's history, you must specify the user's name, ID, or email ( --user ).\n" # and usage()
       unless $room;
-   
+
    warn "[**] No need to set the 'user' (--user) when making requests to a room.\n" if $user;
    $hc->get_room_hist($room, $count);
 }
 
-sub rsend {
+if ( $send_room ) {
+
    if ( $msg ) {
       $hc->send_room($room, $msg);
    }
@@ -329,7 +325,8 @@ sub rsend {
    }
 }
 
-sub nsend {
+if ( $send_notif ) {
+
    if ( $msg ) {
       $hc->send_notif( $room, $msg, $color );
    }
@@ -341,6 +338,3 @@ sub nsend {
       $hc->send_notif( $room, $pipe, $color);
    }
 }
-
-#Branch: testing ; Checking Divergant History
-
